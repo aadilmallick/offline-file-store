@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { FileSystemManager } from "./OPFS";
 import { toaster } from "./Toaster";
 
-interface FileItem {
+export interface FileItem {
   handle: FileSystemFileHandle;
   path: string;
 }
@@ -124,31 +124,47 @@ const DownloadList: React.FC = () => {
         ) : (
           <ul className="space-y-2">
             {files.map((file) => (
-              <li
+              <FileItemComponent
                 key={file.path}
-                className="flex items-center justify-between p-2 bg-gray-50 rounded"
-              >
-                <span>{file.path}</span>
-                <div className="space-x-2">
-                  <button
-                    onClick={() => handleDelete(file)}
-                    className="text-red-500 hover:text-red-700 cursor-pointer"
-                  >
-                    Delete
-                  </button>
-                  <button
-                    onClick={() => handleOpen(file)}
-                    className="text-blue-500 hover:text-blue-700 cursor-pointer"
-                  >
-                    Open in Chrome
-                  </button>
-                </div>
-              </li>
+                file={file}
+                onDelete={handleDelete}
+                onOpen={handleOpen}
+              />
             ))}
           </ul>
         )}
       </div>
     </div>
+  );
+};
+
+export const FileItemComponent = ({
+  file,
+  onDelete,
+  onOpen,
+}: {
+  file: FileItem;
+  onDelete: (fileItem: FileItem) => void;
+  onOpen: (fileItem: FileItem) => void;
+}) => {
+  return (
+    <li className="flex items-center justify-between p-2 gap-2 bg-gray-50 rounded">
+      <span className="text-ellipsis max-w-full break-words">{file.path}</span>
+      <div className="flex items-center flex-wrap gap-2">
+        <button
+          onClick={() => onDelete(file)}
+          className="text-red-500 hover:text-red-700 cursor-pointer select-none"
+        >
+          Delete
+        </button>
+        <button
+          onClick={() => onOpen(file)}
+          className="text-blue-500 hover:text-blue-700 cursor-pointer select-none"
+        >
+          Open in Chrome
+        </button>
+      </div>
+    </li>
   );
 };
 

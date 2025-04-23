@@ -42,6 +42,23 @@ export class FileSystemManager {
     return values;
   }
 
+  static async getDirectoryContentNames(dirHandle: FileSystemDirectoryHandle) {
+    const keys = await Array.fromAsync(dirHandle.keys());
+    return keys;
+  }
+
+  static async getStorageInfo() {
+    const estimate = await navigator.storage.estimate();
+    if (!estimate.quota || !estimate.usage) {
+      throw new Error("Storage estimate not available");
+    }
+    return {
+      storagePercentageUsed: (estimate.usage / estimate.quota) * 100,
+      bytesUsed: estimate.usage,
+      bytesAvailable: estimate.quota,
+    };
+  }
+
   /**
    * Recursively walks through a directory handle and returns all files
    * @param dirHandle The directory handle to walk through
@@ -190,5 +207,133 @@ export class FileSystemManager {
     const writable = await fileHandle.createWritable();
     await writable.write(data);
     await writable.close();
+  }
+}
+
+export class OPFS {
+  private root!: FileSystemDirectoryHandle;
+
+  constructor(root?: FileSystemDirectoryHandle) {
+    if (root) {
+      this.root = root;
+    }
+  }
+
+  async initOPFS() {
+    try {
+      this.root = await navigator.storage.getDirectory();
+      return true;
+    } catch (e) {
+      console.error("Error opening directory:", e);
+      return false;
+    }
+  }
+
+  public get directoryHandle() {
+    return this.root;
+  }
+
+  public get initialized() {
+    return !!this.root;
+  }
+
+  private validate(): this is { root: FileSystemDirectoryHandle } {
+    if (!this.root) {
+      throw new Error("Root directory not set");
+    }
+    return true;
+  }
+
+  async getDirectoryContents() {
+    this.validate();
+    return await FileSystemManager.readDirectoryHandle(this.root);
+  }
+
+  async getFilesAndFolders() {
+    this.validate();
+    const entries = await FileSystemManager.readDirectoryHandle(this.root);
+    const files = entries.filter(
+      (entry) => entry.kind === "file"
+    ) as FileSystemFileHandle[];
+    const folders = entries.filter(
+      (entry) => entry.kind === "directory"
+    ) as FileSystemDirectoryHandle[];
+    return {
+      files,
+      folders,
+    };
+  }
+
+  async createFileHandle(filename: string) {
+    this.validate();
+    return await FileSystemManager.createFileFromDirectory(this.root, filename);
+  }
+
+  async createDirectory(folderName: string) {
+    this.validate();
+    const dirHandle = await this.root.getDirectoryHandle(folderName, {
+      create: true,
+    });
+    return new OPFS(dirHandle);
+  }
+
+  async getDirectoryContentNames() {
+    this.validate();
+    return await FileSystemManager.getDirectoryContentNames(this.root);
+  }
+
+  async getFileHandle(filename: string) {
+    this.validate();
+    return await FileSystemManager.getFileFromDirectory(this.root, filename);
+  }
+
+  async deleteFile(filename: string) {
+    this.validate();
+    await FileSystemManager.deleteFileFromDirectory(this.root, filename);
+  }
+
+  async deleteFolder(folderName: string) {
+    this.validate();
+    await FileSystemManager.deleteFolderFromDirectory(this.root, folderName);
+  }
+
+  static async writeDataToFileHandle(
+    file: FileSystemFileHandle,
+    data: string | Blob | ArrayBuffer
+  ) {
+    const writable = await file.createWritable();
+    await writable.write(data);
+    await writable.close();
+  }
+}
+
+export class DirectoryNavigationStack {
+  constructor(
+    private root: FileSystemDirectoryHandle,
+    private stack: FileSystemDirectoryHandle[] = []
+  ) {}
+
+  public get isRoot() {
+    return this.stack.length === 0;
+  }
+
+  public get fsRoot() {
+    return this.root;
+  }
+
+  public get size() {
+    return this.stack.length;
+  }
+
+  public push(dirHandle: FileSystemDirectoryHandle) {
+    this.stack.push(dirHandle);
+  }
+
+  public pop() {
+    return this.stack.pop();
+  }
+
+  public get currentDirectory() {
+    return this.stack.at(-1) || this.root;
   }
 }
