@@ -1,7 +1,15 @@
-import { useEffect, useRef, useState, use } from "react";
+import { useEffect, useRef, useState, use, useLayoutEffect } from "react";
 import { FileItem, FileItemComponent } from "./DownloadList";
-import { DirectoryNavigationStack, FileSystemManager, OPFS } from "./OPFS";
+import {
+  DirectoryNavigationStack,
+  FileSystemManager,
+  humanFileSize,
+  OPFS,
+} from "./OPFS";
 import { toaster } from "./Toaster";
+import { useAppStore } from "./useStore";
+import useSWR from "swr";
+import { StorageUsedComponent } from "./StorageUsedComponent";
 
 interface FileContent {
   type: "file";
@@ -31,13 +39,6 @@ async function getEntries(handle: FileSystemDirectoryHandle) {
   });
 }
 
-async function getStorageInfo() {
-  const info = await FileSystemManager.getStorageInfo();
-  return {
-    percentUsed: info.storagePercentageUsed,
-  };
-}
-
 export const OPFSList: React.FC = () => {
   const [opfsInitialized, setOPFSInitialized] = useState(false);
   const opfsRef = useRef<OPFS>(new OPFS());
@@ -45,6 +46,11 @@ export const OPFSList: React.FC = () => {
   const [directoryContents, setDirectoryContents] = useState<
     (FileContent | DirectoryContent)[]
   >([]);
+  const { setFileSizeInDirectory, addFileSize, removeFileSize } = useAppStore();
+
+  const getParentFolderPath = () => {
+    return directoryStackRef.current?.parentFolderPath || "/";
+  };
 
   useEffect(() => {
     async function setupOPFS() {
@@ -72,6 +78,7 @@ export const OPFSList: React.FC = () => {
         const opfs = new OPFS(directoryStackRef.current.currentDirectory);
         const fileHandle = await opfs.createFileHandle(file.name);
         await OPFS.writeDataToFileHandle(fileHandle, file);
+        addFileSize(file.size);
       } catch (error) {
         const message = `Failed to save file ${file.name}:`;
         toaster.danger(message);
@@ -110,12 +117,18 @@ export const OPFSList: React.FC = () => {
 
     try {
       const opfs = new OPFS(directoryStackRef.current.currentDirectory);
+      console.log(directoryStackRef.current.currentDirectory);
+      const fileSize = await FileSystemManager.getFileSize(fileItem.handle);
+      removeFileSize(fileSize);
       await opfs.deleteFile(fileItem.handle.name);
       setDirectoryContents((prev) =>
         prev.filter((item) => item.handle.name !== fileItem.handle.name)
       );
     } catch (error) {
-      console.error(`Failed to delete file ${fileItem.path}:`, error);
+      console.error(
+        `Failed to delete file ${fileItem.handle.name} qt path: ${fileItem.path}:`,
+        error
+      );
     }
   }
 
@@ -130,6 +143,7 @@ export const OPFSList: React.FC = () => {
     if (!directoryStackRef.current) return;
     directoryStackRef.current.push(handle);
 
+    setFileSizeInDirectory(0);
     const entries = await getEntries(handle);
     setDirectoryContents(entries);
   }
@@ -142,6 +156,7 @@ export const OPFSList: React.FC = () => {
     if (directoryStackRef.current.isRoot) return;
     // 2. pop the current handle from the stack.
     directoryStackRef.current.pop();
+    setFileSizeInDirectory(0);
     // 3. set directory contents based on top of the stack.
     const entries = await getEntries(
       directoryStackRef.current.currentDirectory
@@ -218,8 +233,15 @@ export const OPFSList: React.FC = () => {
         />
       </div>
 
-      <div className="border rounded p-4 overflow-y-auto flex-1">
+      <div
+        className="border rounded p-4 overflow-y-auto flex-1"
+        // TODO: add throttle
+        onDragOver={(e) => {
+          console.log(e.currentTarget);
+        }}
+      >
         <h2 className="text-xl font-bold mb-4">Files in OPFS</h2>
+        <StorageUsedComponent />
         <div className="flex gap-x-2 items-baseline">
           <h3 className="text-base font-semibold text-gray-400">
             Current Directory:{" "}
@@ -228,7 +250,7 @@ export const OPFSList: React.FC = () => {
               49
             )}
           </h3>
-          {/* <p>Usage: {Math.floor(info.percentUsed)}%</p> */}
+          <FolderSizeComponent />
         </div>
         <FolderContentsList
           contents={directoryContents}
@@ -237,10 +259,17 @@ export const OPFSList: React.FC = () => {
           onFolderDelete={handleFolderDelete}
           onFolderSelect={handleFolderSelect}
           onParentFolderSelect={handleParentFolderSelect}
+          parentFolderPath={getParentFolderPath()}
         />
       </div>
     </div>
   );
+};
+
+const FolderSizeComponent = () => {
+  const { fileSizeInDirectory } = useAppStore();
+
+  return <span>{humanFileSize(fileSizeInDirectory, 2)}</span>;
 };
 
 const FolderContentsList = ({
@@ -250,6 +279,7 @@ const FolderContentsList = ({
   onFolderDelete,
   onFolderSelect,
   onParentFolderSelect,
+  parentFolderPath,
 }: {
   contents: (DirectoryContent | FileContent)[];
   handleFileDelete: (fileItem: FileItem) => void;
@@ -257,7 +287,23 @@ const FolderContentsList = ({
   onFolderDelete: (handle: FileSystemDirectoryHandle) => void;
   onFolderSelect: (handle: FileSystemDirectoryHandle) => void;
   onParentFolderSelect: () => void;
+  parentFolderPath: string;
 }) => {
+  const { addFileSize, setFileSizeInDirectory } = useAppStore();
+
+  useLayoutEffect(() => {
+    async function getFileSizes() {
+      setFileSizeInDirectory(0);
+      for (const item of contents) {
+        if (item.type === "file") {
+          const fileSize = await FileSystemManager.getFileSize(item.handle);
+          addFileSize(fileSize);
+        }
+      }
+    }
+
+    getFileSizes();
+  }, [contents]);
   if (contents.length === 0) {
     return (
       <div className="space-y-2">
@@ -288,10 +334,11 @@ const FolderContentsList = ({
               key={item.handle.name}
               file={{
                 handle: item.handle,
-                path: item.handle.name,
+                path: `${parentFolderPath}${item.handle.name}`,
               }}
               onDelete={handleFileDelete}
               onOpen={handleFileOpen}
+              isInOPFS
             />
           );
         }

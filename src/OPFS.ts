@@ -4,6 +4,10 @@ type FileAcceptType = {
 };
 
 export class FileSystemManager {
+  static async getFileSize(handle: FileSystemFileHandle) {
+    const file = await handle.getFile();
+    return file.size;
+  }
   // region READ
   static async openSingleFile(types: FileAcceptType[]) {
     const [fileHandle] = await window.showOpenFilePicker({
@@ -336,4 +340,61 @@ export class DirectoryNavigationStack {
   public get currentDirectory() {
     return this.stack.at(-1) || this.root;
   }
+
+  public get currentFolderPath() {
+    if (this.isRoot) {
+      return "/" + this.root.name;
+    }
+    return "/" + [this.root.name, ...this.stack.map((d) => d.name)].join("/");
+  }
+
+  public get parentFolderPath() {
+    if (this.isRoot) {
+      return "/" + this.root.name;
+    }
+    return (
+      "/" +
+      [this.root.name, ...this.stack.slice(0, -1).map((d) => d.name)].join("/")
+    );
+  }
+}
+
+export class FileHandleModel {
+  constructor(public handle: FileSystemFileHandle) {}
+
+  getFileData() {
+    return this.handle.getFile();
+  }
+
+  async getFileSize() {
+    const file = await this.getFileData();
+    return file.size;
+  }
+
+  async getFileAsBlobUrl() {
+    const file = await this.getFileData();
+    return URL.createObjectURL(file);
+  }
+}
+
+export function humanFileSize(bytes: number, dp = 1) {
+  const thresh = 1000;
+
+  if (Math.abs(bytes) < thresh) {
+    return bytes + " B";
+  }
+
+  const units = ["kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
+  let u = -1;
+  const r = 10 ** dp;
+
+  do {
+    bytes /= thresh;
+    ++u;
+  } while (
+    Math.round(Math.abs(bytes) * r) / r >= thresh &&
+    u < units.length - 1
+  );
+
+  return bytes.toFixed(dp) + " " + units[u];
 }

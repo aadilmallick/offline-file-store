@@ -1,6 +1,9 @@
-import React, { useState } from "react";
-import { FileSystemManager } from "./OPFS";
+import React, { useEffect, useState } from "react";
+import { FileHandleModel, FileSystemManager, humanFileSize } from "./OPFS";
 import { toaster } from "./Toaster";
+import useSWR from "swr";
+import { useStore } from "zustand";
+import { useAppStore } from "./useStore";
 
 export interface FileItem {
   handle: FileSystemFileHandle;
@@ -142,15 +145,41 @@ export const FileItemComponent = ({
   file,
   onDelete,
   onOpen,
+  isInOPFS,
 }: {
   file: FileItem;
   onDelete: (fileItem: FileItem) => void;
   onOpen: (fileItem: FileItem) => void;
+  isInOPFS?: boolean;
 }) => {
+  const {
+    data: fileSize,
+    error,
+    isLoading,
+  } = useSWR([file.path, !!isInOPFS], async () => {
+    const size = await FileSystemManager.getFileSize(file.handle);
+    return size;
+  });
+
+  const FileSizeComponent = () => {
+    if (isLoading) {
+      return <span>...</span>;
+    } else if (fileSize) {
+      return (
+        <span className="text-gray-500 font-semibold text-sm">
+          {humanFileSize(fileSize)}
+        </span>
+      );
+    } else {
+      return null;
+    }
+  };
+
   return (
     <li className="flex items-center justify-between p-2 gap-2 bg-gray-50 rounded">
       <span className="text-ellipsis max-w-full break-words">{file.path}</span>
       <div className="flex items-center flex-wrap gap-2">
+        <FileSizeComponent />
         <button
           onClick={() => onDelete(file)}
           className="text-red-500 hover:text-red-700 cursor-pointer select-none"
