@@ -5,10 +5,10 @@ const App = () => {
   return (
     <>
       <section className="h-screen">
-        <DownloadList />
+        <OPFSList />
       </section>
       <section className="h-screen">
-        <OPFSList />
+        <DownloadList />
       </section>
     </>
   );
