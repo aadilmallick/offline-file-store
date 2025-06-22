@@ -316,7 +316,7 @@ const FolderContentsList = ({
   }
 
   return (
-    <ul className="space-y-2">
+    <ul className="space-y-2 max-h-96 overflow-y-auto">
       <ParentFolderItemComponent onParentFolderSelect={onParentFolderSelect} />
       {contents.map((item) => {
         if (item.type === "folder") {
