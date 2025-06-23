@@ -115,6 +115,11 @@ export const OPFSList: React.FC = () => {
     if (!opfsInitialized) return;
     if (!directoryStackRef.current) return;
 
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete the file "${fileItem.handle.name}"? This action cannot be undone.`
+    );
+    if (!confirmDelete) return;
+
     try {
       const opfs = new OPFS(directoryStackRef.current.currentDirectory);
       console.log(directoryStackRef.current.currentDirectory);
