@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, use, useLayoutEffect } from "react";
 import { FileItem, FileItemComponent } from "./DownloadList";
+import JSZip from "jszip";
 import {
   DirectoryNavigationStack,
   FileSystemManager,
@@ -220,6 +221,33 @@ export const OPFSList: React.FC = () => {
     }
   }
 
+  async function handleFolderDownload(handle: FileSystemDirectoryHandle) {
+    if (!opfsInitialized) return;
+
+    try {
+      const zip = new JSZip();
+      const files = await FileSystemManager.walk(handle);
+
+      for (const file of files) {
+        const fileData = await FileSystemManager.getFileDataFromHandle(
+          file.handle
+        );
+        zip.file(file.path, fileData as Blob);
+      }
+
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${handle.name}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toaster.danger(`Failed to download folder ${handle.name}:`);
+      console.error(`Failed to download folder ${handle.name}:`, error);
+    }
+  }
+
   return (
     <div className="p-4">
       <div className="p-2 flex flex-row gap-2 items-center justify-between">
@@ -265,6 +293,7 @@ export const OPFSList: React.FC = () => {
           onFolderSelect={handleFolderSelect}
           onParentFolderSelect={handleParentFolderSelect}
           parentFolderPath={getParentFolderPath()}
+          onFolderDownload={handleFolderDownload}
         />
       </div>
     </div>
@@ -285,12 +314,14 @@ const FolderContentsList = ({
   onFolderSelect,
   onParentFolderSelect,
   parentFolderPath,
+  onFolderDownload,
 }: {
   contents: (DirectoryContent | FileContent)[];
   handleFileDelete: (fileItem: FileItem) => void;
   handleFileOpen: (fileItem: FileItem) => void;
   onFolderDelete: (handle: FileSystemDirectoryHandle) => void;
   onFolderSelect: (handle: FileSystemDirectoryHandle) => void;
+  onFolderDownload: (handle: FileSystemDirectoryHandle) => void;
   onParentFolderSelect: () => void;
   parentFolderPath: string;
 }) => {
@@ -331,6 +362,7 @@ const FolderContentsList = ({
               key={item.handle.name}
               onFolderDelete={onFolderDelete}
               onFolderSelect={onFolderSelect}
+              onFolderDownload={onFolderDownload}
             />
           );
         } else {
@@ -356,10 +388,12 @@ const FolderItemComponent = ({
   handle,
   onFolderDelete,
   onFolderSelect,
+  onFolderDownload,
 }: {
   handle: FileSystemDirectoryHandle;
   onFolderDelete: (handle: FileSystemDirectoryHandle) => void;
   onFolderSelect: (handle: FileSystemDirectoryHandle) => void;
+  onFolderDownload: (handle: FileSystemDirectoryHandle) => void;
 }) => {
   return (
     <li
@@ -383,7 +417,16 @@ const FolderItemComponent = ({
           {handle.name}
         </span>
       </div>
-      <div>
+      <div className="flex gap-x-2">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onFolderDownload(handle);
+          }}
+          className="text-blue-500 hover:text-blue-700 cursor-pointer select-none"
+        >
+          Download
+        </button>
         <button
           onClick={(e) => {
             e.stopPropagation();
