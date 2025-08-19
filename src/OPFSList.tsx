@@ -190,6 +190,51 @@ export const OPFSList: React.FC = () => {
     }
   }
 
+  async function handleDrop(
+    e: React.DragEvent<HTMLLIElement>,
+    destinationHandle: FileSystemDirectoryHandle
+  ) {
+    e.preventDefault();
+    if (!directoryStackRef.current) return;
+
+    const item = e.dataTransfer.getData("application/json");
+    if (!item) return;
+
+    const { name, type } = JSON.parse(item);
+    const opfs = new OPFS(directoryStackRef.current.currentDirectory);
+    const handle = directoryContents.find(
+      (item) => item.handle.name === name && item.type === type
+    )?.handle;
+
+    if (!handle) return;
+
+    if (handle.kind === "directory") {
+      if (handle.name === destinationHandle.name) {
+        return;
+      }
+      const isDescendant = await FileSystemManager.isDescendant(
+        handle as FileSystemDirectoryHandle,
+        destinationHandle
+      );
+      if (isDescendant) {
+        toaster.danger("Cannot move a folder into one of its subfolders.");
+        return;
+      }
+    }
+
+    if (
+      directoryStackRef.current.currentDirectory.name ===
+      destinationHandle.name
+    ) {
+      return;
+    }
+    await opfs.move(handle, destinationHandle);
+    const entries = await getEntries(
+      directoryStackRef.current.currentDirectory
+    );
+    setDirectoryContents(entries);
+  }
+
   async function createFolder() {
     const folderName = prompt(
       "Enter folder name: (this cannot be changed later"
@@ -294,6 +339,8 @@ export const OPFSList: React.FC = () => {
           onParentFolderSelect={handleParentFolderSelect}
           parentFolderPath={getParentFolderPath()}
           onFolderDownload={handleFolderDownload}
+          onDrop={handleDrop}
+          directoryStack={directoryStackRef.current}
         />
       </div>
     </div>
@@ -315,6 +362,8 @@ const FolderContentsList = ({
   onParentFolderSelect,
   parentFolderPath,
   onFolderDownload,
+  onDrop,
+  directoryStack,
 }: {
   contents: (DirectoryContent | FileContent)[];
   handleFileDelete: (fileItem: FileItem) => void;
@@ -324,6 +373,11 @@ const FolderContentsList = ({
   onFolderDownload: (handle: FileSystemDirectoryHandle) => void;
   onParentFolderSelect: () => void;
   parentFolderPath: string;
+  onDrop: (
+    e: React.DragEvent<HTMLLIElement>,
+    destinationHandle: FileSystemDirectoryHandle
+  ) => void;
+  directoryStack: DirectoryNavigationStack | null;
 }) => {
   const { addFileSize, setFileSizeInDirectory } = useAppStore();
 
@@ -346,6 +400,8 @@ const FolderContentsList = ({
         <p className="text-gray-500 select-none">No files uploaded yet</p>
         <ParentFolderItemComponent
           onParentFolderSelect={onParentFolderSelect}
+          onDrop={onDrop}
+          directoryStack={directoryStack}
         />
       </div>
     );
@@ -353,7 +409,11 @@ const FolderContentsList = ({
 
   return (
     <ul className="space-y-2 max-h-96 overflow-y-auto">
-      <ParentFolderItemComponent onParentFolderSelect={onParentFolderSelect} />
+      <ParentFolderItemComponent
+        onParentFolderSelect={onParentFolderSelect}
+        onDrop={onDrop}
+        directoryStack={directoryStack}
+      />
       {contents.map((item) => {
         if (item.type === "folder") {
           return (
@@ -363,6 +423,7 @@ const FolderContentsList = ({
               onFolderDelete={onFolderDelete}
               onFolderSelect={onFolderSelect}
               onFolderDownload={onFolderDownload}
+              onDrop={onDrop}
             />
           );
         } else {
@@ -389,11 +450,16 @@ const FolderItemComponent = ({
   onFolderDelete,
   onFolderSelect,
   onFolderDownload,
+  onDrop,
 }: {
   handle: FileSystemDirectoryHandle;
   onFolderDelete: (handle: FileSystemDirectoryHandle) => void;
   onFolderSelect: (handle: FileSystemDirectoryHandle) => void;
   onFolderDownload: (handle: FileSystemDirectoryHandle) => void;
+  onDrop: (
+    e: React.DragEvent<HTMLLIElement>,
+    destinationHandle: FileSystemDirectoryHandle
+  ) => void;
 }) => {
   return (
     <li
@@ -402,6 +468,18 @@ const FolderItemComponent = ({
         e.preventDefault();
         e.stopPropagation();
         onFolderSelect(handle);
+      }}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData(
+          "application/json",
+          JSON.stringify({ name: handle.name, type: "folder" })
+        );
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      onDrop={(e) => onDrop(e, handle)}
+      onDragOver={(e) => {
+        e.preventDefault();
       }}
     >
       <div className="flex items-center gap-x-2">
@@ -443,8 +521,15 @@ const FolderItemComponent = ({
 
 export const ParentFolderItemComponent = ({
   onParentFolderSelect,
+  onDrop,
+  directoryStack,
 }: {
   onParentFolderSelect: () => void;
+  onDrop: (
+    e: React.DragEvent<HTMLLIElement>,
+    destinationHandle: FileSystemDirectoryHandle
+  ) => void;
+  directoryStack: DirectoryNavigationStack | null;
 }) => {
   return (
     <li
@@ -453,6 +538,17 @@ export const ParentFolderItemComponent = ({
         e.preventDefault();
         e.stopPropagation();
         onParentFolderSelect();
+      }}
+      onDrop={(e) => {
+        if (directoryStack && !directoryStack.isRoot) {
+          const parentHandle = directoryStack.parentDirectoryHandle;
+          if (parentHandle) {
+            onDrop(e, parentHandle);
+          }
+        }
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
       }}
     >
       <div className="flex items-center gap-x-2">

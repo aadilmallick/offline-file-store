@@ -51,6 +51,25 @@ export class FileSystemManager {
     return keys;
   }
 
+  static async isDescendant(
+    parent: FileSystemDirectoryHandle,
+    child: FileSystemDirectoryHandle
+  ): Promise<boolean> {
+    if (parent.name === child.name) {
+      return true;
+    }
+
+    for await (const entry of parent.values()) {
+      if (entry.kind === "directory") {
+        if (await this.isDescendant(entry, child)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
   static async getStorageInfo() {
     const estimate = await navigator.storage.estimate();
     if (!estimate.quota || !estimate.usage) {
@@ -146,6 +165,55 @@ export class FileSystemManager {
       recursive: true,
     });
   }
+
+  // region MOVE
+  static async moveFile(
+    sourceDirHandle: FileSystemDirectoryHandle,
+    fileHandle: FileSystemFileHandle,
+    destinationDirHandle: FileSystemDirectoryHandle
+  ) {
+    const file = await fileHandle.getFile();
+    const newFileHandle = await destinationDirHandle.getFileHandle(file.name, {
+      create: true,
+    });
+    const writable = await newFileHandle.createWritable();
+    await writable.write(file);
+    await writable.close();
+    await sourceDirHandle.removeEntry(file.name);
+  }
+
+  static async moveFolder(
+    sourceDirHandle: FileSystemDirectoryHandle,
+    folderHandle: FileSystemDirectoryHandle,
+    destinationDirHandle: FileSystemDirectoryHandle
+  ) {
+    const newFolderHandle = await destinationDirHandle.getDirectoryHandle(
+      folderHandle.name,
+      { create: true }
+    );
+    for await (const entry of folderHandle.values()) {
+      if (entry.kind === "file") {
+        await this.moveFile(folderHandle, entry, newFolderHandle);
+      } else {
+        await this.moveFolder(folderHandle, entry, newFolderHandle);
+      }
+    }
+    await sourceDirHandle.removeEntry(folderHandle.name);
+  }
+
+  static async moveEntry(
+    sourceDirHandle: FileSystemDirectoryHandle,
+    entryHandle: FileSystemDirectoryHandle | FileSystemFileHandle,
+    destinationDirHandle: FileSystemDirectoryHandle
+  ) {
+    if (entryHandle.kind === "file") {
+      await this.moveFile(sourceDirHandle, entryHandle, destinationDirHandle);
+    } else {
+      await this.moveFolder(sourceDirHandle, entryHandle, destinationDirHandle);
+    }
+  }
+
+  // endregion
 
   // region WRITE
 
@@ -301,6 +369,14 @@ export class OPFS {
     await FileSystemManager.deleteFolderFromDirectory(this.root, folderName);
   }
 
+  async move(
+    entryHandle: FileSystemDirectoryHandle | FileSystemFileHandle,
+    destination: FileSystemDirectoryHandle
+  ) {
+    this.validate();
+    await FileSystemManager.moveEntry(this.root, entryHandle, destination);
+  }
+
   static async writeDataToFileHandle(
     file: FileSystemFileHandle,
     data: string | Blob | ArrayBuffer
@@ -339,6 +415,10 @@ export class DirectoryNavigationStack {
 
   public get currentDirectory() {
     return this.stack.at(-1) || this.root;
+  }
+
+  public get parentDirectoryHandle() {
+    return this.stack.at(-2) || this.root;
   }
 
   public get currentFolderPath() {
