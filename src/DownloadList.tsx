@@ -176,7 +176,18 @@ export const FileItemComponent = ({
   };
 
   return (
-    <li className="flex items-center justify-between p-2 gap-2 bg-gray-50 rounded">
+    <li
+      className="flex items-center justify-between p-2 gap-2 bg-gray-50 rounded"
+      draggable={isInOPFS}
+      onDragStart={(e) => {
+        if (!isInOPFS) return;
+        e.dataTransfer.setData(
+          "application/json",
+          JSON.stringify({ name: file.handle.name, type: "file" })
+        );
+        e.dataTransfer.effectAllowed = "move";
+      }}
+    >
       <span className="text-ellipsis max-w-full break-words">{file.path}</span>
       <div className="flex items-center flex-wrap gap-2">
         <FileSizeComponent />
