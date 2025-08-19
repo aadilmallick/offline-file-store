@@ -52,24 +52,27 @@ export class FileSystemManager {
   }
 
   static async isDescendant(
-    parent: FileSystemDirectoryHandle,
-    child: FileSystemDirectoryHandle
+    ancestor: FileSystemDirectoryHandle,
+    maybeDescendant: FileSystemDirectoryHandle
   ): Promise<boolean> {
-    if (parent.name === child.name) {
+    // Direct match
+    if (await ancestor.isSameEntry(maybeDescendant)) {
       return true;
     }
-
-    for await (const entry of parent.values()) {
+    // Traverse subtree using identity comparison
+    for await (const entry of ancestor.values()) {
       if (entry.kind === "directory") {
-        if (await this.isDescendant(entry, child)) {
+        const dir = entry as FileSystemDirectoryHandle;
+        if (await dir.isSameEntry(maybeDescendant)) {
+          return true;
+        }
+        if (await this.isDescendant(dir, maybeDescendant)) {
           return true;
         }
       }
     }
-
     return false;
   }
-
   static async getStorageInfo() {
     const estimate = await navigator.storage.estimate();
     if (!estimate.quota || !estimate.usage) {
