@@ -195,12 +195,19 @@ export const OPFSList: React.FC = () => {
     destinationHandle: FileSystemDirectoryHandle
   ) {
     e.preventDefault();
+    e.stopPropagation();
     if (!directoryStackRef.current) return;
 
     const item = e.dataTransfer.getData("application/json");
     if (!item) return;
 
-    const { name, type } = JSON.parse(item);
+    let name: string, type: "file" | "folder";
+    try {
+      ({ name, type } = JSON.parse(item));
+    } catch {
+      // Ignore unrelated drops
+      return;
+    }
     const opfs = new OPFS(directoryStackRef.current.currentDirectory);
     const handle = directoryContents.find(
       (item) => item.handle.name === name && item.type === type
@@ -222,19 +229,20 @@ export const OPFSList: React.FC = () => {
       }
     }
 
-    if (
-      directoryStackRef.current.currentDirectory.name ===
-      destinationHandle.name
-    ) {
+    if (await directoryStackRef.current.currentDirectory.isSameEntry(destinationHandle)) {
       return;
     }
-    await opfs.move(handle, destinationHandle);
+    try {
+      await opfs.move(handle, destinationHandle);
+    } catch (err: any) {
+      toaster.danger(err?.message ?? "Move failed");
+      return;
+    }
     const entries = await getEntries(
       directoryStackRef.current.currentDirectory
     );
     setDirectoryContents(entries);
   }
-
   async function createFolder() {
     const folderName = prompt(
       "Enter folder name: (this cannot be changed later"
