@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { FileHandleModel, FileSystemManager, humanFileSize } from "./OPFS";
 import { toaster } from "./Toaster";
 import useSWR from "swr";
@@ -203,6 +204,14 @@ export const FileItemComponent = ({
         >
           Open in Chrome
         </button>
+        {file.handle.name.endsWith(".md") && (
+          <Link
+            to={`/preview/${btoa(file.path)}`}
+            className="text-green-600 hover:text-green-800 cursor-pointer select-none"
+          >
+            Preview
+          </Link>
+        )}
       </div>
     </li>
   );
